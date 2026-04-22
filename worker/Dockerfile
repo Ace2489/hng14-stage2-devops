@@ -4,7 +4,7 @@ WORKDIR /build
 
 COPY requirements.txt .
 
-RUN pip install --upgrade pip \
+RUN pip install --no-cache-dir --upgrade pip==latest \
  && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
@@ -17,7 +17,7 @@ COPY --from=builder /install /usr/local
 RUN addgroup -S worker \
  && adduser -S -G worker -H -D worker
 
-COPY worker.py healthcheck.py .
+COPY worker.py healthcheck.py ./
 
 USER worker
 
