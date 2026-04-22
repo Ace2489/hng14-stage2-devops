@@ -103,6 +103,21 @@ jobs:
         run: |
           docker build -t localhost:5000/worker:$SHA -t localhost:5000/worker:latest ./worker
 
+      - name: Save images as tarballs
+        run: |
+          docker save localhost:5000/api:latest     -o api.tar
+          docker save localhost:5000/frontend:latest -o frontend.tar
+          docker save localhost:5000/worker:latest   -o worker.tar
+
+      - name: Upload image tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: |
+            api.tar
+            frontend.tar
+            worker.tar
+          if-no-files-found: error
       - name: Push images
         run: |
           docker push localhost:5000/api:$SHA
@@ -113,6 +128,52 @@ jobs:
 
           docker push localhost:5000/worker:$SHA
           docker push localhost:5000/worker:latest
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download image tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images into Docker
+        run: |
+          docker load -i api.tar
+          docker load -i frontend.tar
+          docker load -i worker.tar
+
+      - name: Install Trivy
+        run: |
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+      - name: Scan API image
+        run: |
+          trivy image --exit-code 1 --severity CRITICAL \
+            --format sarif --output trivy-api.sarif \
+            localhost:5000/api:latest
+      - name: Scan Worker image
+        run: |
+          trivy image --exit-code 1 --severity CRITICAL \
+            --format sarif --output trivy-worker.sarif \
+            localhost:5000/worker:latest
+      - name: Scan Frontend image
+        run: |
+          trivy image --exit-code 1 --severity CRITICAL \
+            --format sarif --output trivy-frontend.sarif \
+            localhost:5000/frontend:latest
+
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-results
+          path: "*.sarif"
+          if-no-files-found: warn
 
   deploy:
     runs-on: ubuntu-latest
