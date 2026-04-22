@@ -4,7 +4,7 @@ WORKDIR /build
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --upgrade pip==latest \
+RUN pip install --no-cache-dir --upgrade pip==26.0.1 \
  && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
