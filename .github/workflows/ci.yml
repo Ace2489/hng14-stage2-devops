@@ -187,13 +187,12 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Set up environment variables
+      - name: Run Integration test
+
         run: |
           cp .env.example .env
           export $(grep -v '^#' .env | xargs)
-
-      - name: Run Integration test
-        run: go run scripts/integration.go
+          go run scripts/integration.go
 
   deploy:
     runs-on: ubuntu-latest
