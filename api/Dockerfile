@@ -1,0 +1,30 @@
+FROM python:3.12-alpine AS builder
+
+WORKDIR /build
+
+COPY requirements.txt .
+
+RUN pip install --upgrade pip \
+&& pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+
+FROM python:3.12-alpine
+
+WORKDIR /app
+
+COPY --from=builder /install /usr/local
+
+RUN addgroup -S api \
+&& adduser -S -G api -H -D api
+
+COPY main.py .
+
+USER api
+
+ENV API_PORT=8000
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3\
+    CMD wget -q --spider http://localhost:${API_PORT}/health || exit 1
+
+CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${API_PORT}"

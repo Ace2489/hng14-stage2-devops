@@ -1,52 +1,71 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Job Dashboard</title>
-  <style>
-    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
-    button { padding: 10px 20px; cursor: pointer; }
-    #result { margin-top: 20px; padding: 10px; background: #f4f4f4; border-radius: 4px; }
-    #jobs { margin-top: 20px; }
-    .job { padding: 8px; border-bottom: 1px solid #ddd; }
-  </style>
-</head>
-<body>
-  <h1>Job Processor Dashboard</h1>
-  <button onclick="submitJob()">Submit New Job</button>
-  <div id="result"></div>
-  <div id="jobs"></div>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Job Dashboard</title>
+        <style>
+            body {
+                font-family: sans-serif;
+                max-width: 600px;
+                margin: 40px auto;
+                padding: 0 20px;
+            }
+            button {
+                padding: 10px 20px;
+                cursor: pointer;
+            }
+            #result {
+                margin-top: 20px;
+                padding: 10px;
+                background: #f4f4f4;
+                border-radius: 4px;
+            }
+            #jobs {
+                margin-top: 20px;
+            }
+            .job {
+                padding: 8px;
+                border-bottom: 1px solid #ddd;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Job Processor Dashboard</h1>
+        <button onclick="submitJob()">Submit New Job</button>
+        <div id="result"></div>
+        <div id="jobs"></div>
 
-  <script>
-    const jobIds = [];
+        <script>
+            const jobIds = [];
 
-    async function submitJob() {
-      const res = await fetch('/submit', { method: 'POST' });
-      const data = await res.json();
-      document.getElementById('result').innerText = `Submitted: ${data.job_id}`;
-      jobIds.push(data.job_id);
-      pollJob(data.job_id);
-    }
+            async function submitJob() {
+                const res = await fetch("/submit", { method: "POST" });
+                const data = await res.json();
+                document.getElementById("result").innerText =
+                    `Submitted: ${data.job_id}`;
+                jobIds.push(data.job_id);
+                pollJob(data.job_id);
+            }
 
-    async function pollJob(id) {
-      const res = await fetch(`/status/${id}`);
-      const data = await res.json();
-      renderJob(id, data.status);
-      if (data.status !== 'completed') {
-        setTimeout(() => pollJob(id), 2000);
-      }
-    }
+            async function pollJob(id) {
+                const res = await fetch(`/status/${id}`);
+                const data = await res.json();
+                renderJob(id, data.status);
+                if (data.status !== "completed") {
+                    setTimeout(() => pollJob(id), 2000);
+                }
+            }
 
-    function renderJob(id, status) {
-      let el = document.getElementById(id);
-      if (!el) {
-        el = document.createElement('div');
-        el.className = 'job';
-        el.id = id;
-        document.getElementById('jobs').appendChild(el);
-      }
-      el.innerText = `Job ${id.substring(0, 8)}... — ${status}`;
-    }
-  </script>
-</body>
+            function renderJob(id, status) {
+                let el = document.getElementById(id);
+                if (!el) {
+                    el = document.createElement("div");
+                    el.className = "job";
+                    el.id = id;
+                    document.getElementById("jobs").appendChild(el);
+                }
+                el.innerText = `Job ${id.substring(0, 8)}... — ${status}`;
+            }
+        </script>
+    </body>
 </html>

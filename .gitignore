@@ -1,0 +1,7 @@
+venv
+.env
+__pycache__
+bun.lock
+node_modules/
+nohup.out
+test.py
