@@ -2,9 +2,9 @@ FROM oven/bun:1.3-alpine AS builder
 
 WORKDIR /build
 
-COPY package.json bun.lock ./
+COPY package.json ./
 
-RUN bun install --frozen-lockfile --production
+RUN bun install --production
 
 
 FROM oven/bun:alpine
