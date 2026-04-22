@@ -100,7 +100,7 @@ Related to the above: even if exceptions had been caught, there was no code path
 ### Worker Does Not Shut Down Gracefully
 **File**: `worker/main.py`
 
-A `SIGTERM` would cause the process to exit immediately, potentially mid-job. The job would be lost — already off the queue, but not yet completed.
+A `SIGTERM` would cause the process to exit immediately, potentially mid-job. The job would be lost, as it was already off the queue, but not yet completed.
 
 **After** (`worker/main.py`, lines 26–36): A `shutdown` flag is set by signal handlers for both `SIGTERM` and `SIGINT`. The main loop checks the flag on each iteration, finishing the current job before exiting.
 ```python
@@ -223,11 +223,11 @@ All `print()` calls replaced with `log.info()` / `log.error()`. API structured l
 ### No Health Check Endpoints
 **Files**: `api/main.py`, `frontend/app.js`
 
-Neither service exposed a health endpoint, making them opaque to load balancers, container orchestrators, and `docker-compose` dependency health checks.
+Neither service exposed a health endpoint, making them opaque to orchestrators and `docker-compose` dependency health checks.
 
 **After** — API (`api/main.py`, lines 24–25):
 ```python
-@app.get("/healthz")
+@app.get("/health")
 def health():
     return {"status": "ok"}
 ```
@@ -306,154 +306,4 @@ const response = await axios.post(
   {},
   { timeout: REQUEST_TIMEOUT_MS },
 );
-```
-
----
-
-## 6. Bugs Introduced During Fix Implementation
-
-The following bugs were introduced while applying the above fixes. They are not present in the original codebase and must be corrected.
-
----
-
-### `require_env` Called with Pre-Resolved Value Instead of Key Name
-**Files**: `api/main.py` lines 16–18, `worker/main.py` lines 17–19
-
-`require_env` internally calls `os.getenv(key)`. By wrapping the call in `os.getenv()` first, the *value* of the environment variable (e.g., `"redis"`) is passed as the key argument, causing `require_env` to look up an env var literally named `"redis"` instead of `"REDIS_HOST"`. This will fail at startup or silently return the wrong value.
-
-**Broken**:
-```python
-host=require_env(os.getenv("REDIS_HOST")),
-port=int(require_env(os.getenv("REDIS_PORT", 6379))),
-password=require_env(os.getenv("REDIS_PASSWORD")),
-```
-
-**Fix**:
-```python
-host=require_env("REDIS_HOST"),
-port=int(os.getenv("REDIS_PORT", 6379)),  # has a safe default, require_env not needed
-password=require_env("REDIS_PASSWORD"),
-```
-
----
-
-### Health Endpoint Not Registered — Missing `@` Decorator and `/` Prefix
-**File**: `api/main.py`, line 24
-
-`app.get("health")` is a plain function call that returns a route object. It is not a decorator. The `def health()` below it is an unregistered, unreachable function. The endpoint does not exist.
-
-**Broken**:
-```python
-app.get("health")
-
-def health():
-    return {"status": "ok"}
-```
-
-**Fix**:
-```python
-@app.get("/healthz")
-def health():
-    return {"status": "ok"}
-```
-
----
-
-### `express` Used Before Import
-**File**: `frontend/app.js`, lines 3, 9–10
-
-`const app = express()` is called on line 3, but `express` is never imported. The application crashes immediately on startup with `ReferenceError: express is not defined`.
-
-**Broken**:
-```js
-const axios = require("axios");
-const path = require("path");
-const app = express(); // express is undefined
-```
-
-**Fix**:
-```js
-const express = require("express");
-const axios = require("axios");
-const path = require("path");
-const app = express();
-```
-
----
-
-### `axios.get` Called with Wrong Signature — Timeout Is Silently Ignored
-**File**: `frontend/app.js`, lines 30–34
-
-`axios.get` takes `(url, config)`. The fix passes three arguments — `(url, {}, { timeout })` — treating it like `axios.post`. The empty object is interpreted as the config, and the real config containing the timeout is silently discarded. The timeout fix has no effect on `GET /status/:id`.
-
-**Broken**:
-```js
-const response = await axios.get(
-  `${API_URL}/jobs/${req.params.id}`,
-  {},
-  { timeout: REQUEST_TIMEOUT_MS },
-);
-```
-
-**Fix**:
-```js
-const response = await axios.get(
-  `${API_URL}/jobs/${req.params.id}`,
-  { timeout: REQUEST_TIMEOUT_MS },
-);
-```
-
----
-
-### `res.status()` Passed an Object Instead of a Status Code
-**File**: `frontend/app.js`, line 46
-
-`status` is assigned an object `{ code: 404, message: "..." }`. Passing an object to `res.status()` produces `NaN`, which Express coerces to `200`. The intended 404 is never sent.
-
-**Broken**:
-```js
-} else status = { code: 500, message: "something went wrong" };
-
-res.status(status).json({ error: "err.response?.data?.detai" });
-```
-
-**Fix**:
-```js
-const statusCode = err.response?.status === 404 ? 404 : 500;
-const message = err.response?.status === 404
-  ? "No job found for the given id"
-  : "something went wrong";
-
-res.status(statusCode).json({ error: message });
-```
-
----
-
-### Error Detail Is a String Literal, Not an Expression
-**File**: `frontend/app.js`, line 46
-
-`"err.response?.data?.detai"` is a hardcoded string — it is not evaluated as JavaScript. The client always receives the literal text `err.response?.data?.detai` (also note the truncated `detail`), regardless of the actual error.
-
-**Broken**:
-```js
-res.status(status).json({ error: "err.response?.data?.detai" });
-```
-
-**Fix**: Remove the quotes and correct the typo (absorbed into the fix above).
-
----
-
-### `.decode()` Called on a String
-**File**: `worker/main.py`, line 68
-
-`decode_responses=True` on the Redis client means `brpop` already returns native Python strings. Calling `.decode()` on a string raises `AttributeError: 'str' object has no attribute 'decode'`, which immediately triggers the `except` block on every single job, marking all jobs as failed without ever processing them.
-
-**Broken**:
-```python
-process_job(job_id.decode())
-```
-
-**Fix**:
-```python
-process_job(job_id)
 ```
