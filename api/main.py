@@ -1,5 +1,6 @@
 import os
 import uuid
+from contextlib import asynccontextmanager
 
 import redis
 from fastapi import FastAPI, HTTPException
@@ -12,14 +13,27 @@ def require_env(key) -> str:
     return value
 
 
-r = redis.Redis(
-    host=require_env("REDIS_HOST"),
-    port=int(require_env("REDIS_PORT")),
-    password=require_env("REDIS_PASSWORD"),
-    decode_responses=True,
-)
+def create_redis():
+    return redis.Redis(
+        host=require_env("REDIS_HOST"),
+        port=int(require_env("REDIS_PORT")),
+        password=require_env("REDIS_PASSWORD"),
+        decode_responses=True,
+    )
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.redis = create_redis()
+    yield
+    app.state.redis.close()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+def get_redis():
+    return app.state.redis
 
 
 @app.get("/health")
@@ -30,6 +44,7 @@ def health():
 @app.post("/jobs")
 def create_job():
     job_id = str(uuid.uuid4())
+    r = get_redis()
 
     pipe = r.pipeline()
     pipe.hset(f"job:{job_id}", "status", "queued")
@@ -42,6 +57,7 @@ def create_job():
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
+    r = get_redis()
     status = r.hget(f"job:{job_id}", "status")
     if not status:
         raise HTTPException(status_code=404, detail="job not found")
