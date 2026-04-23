@@ -1,6 +1,6 @@
-# HNG14 Stage 2 — Containerised Job Processor
+# HNG14 Stage 2
 
-Four services for a job processing system.:
+Four services for a job processing system.
 
 | Service | Role | Exposed |
 |---------|------|---------|
