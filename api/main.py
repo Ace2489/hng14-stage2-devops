@@ -1,9 +1,13 @@
+import faulthandler
 import os
+import signal
 import uuid
 from contextlib import asynccontextmanager
 
 import redis
 from fastapi import FastAPI, HTTPException
+
+faulthandler.register(signal.SIGUSR1)
 
 
 def require_env(key) -> str:
