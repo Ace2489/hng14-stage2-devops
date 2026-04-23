@@ -62,7 +62,7 @@ services:
 
   frontend:
     image: "$FRONTEND_IMAGE"
-    image_name: frontend
+    container_name: frontend
     build:
       context: ./frontend
     environment:
