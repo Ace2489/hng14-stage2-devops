@@ -10,11 +10,18 @@ log() { echo "[deploy] $(date +%T) $*"; }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-# Detect the Docker network the named container is attached to.
-get_network() {
+# Returns all networks as --network flags
+get_network_args() {
   docker inspect "$1" \
-    --format='{{range $k,$_ := .NetworkSettings.Networks}}{{$k}}{{end}}' \
-    2>/dev/null | head -1
+    --format='{{range $k,$_ := .NetworkSettings.Networks}}--network {{$k}} {{end}}' \
+    2>/dev/null || true
+}
+
+# For logging, get them newline-separated
+get_networks_display() {
+  docker inspect "$1" \
+    --format='{{range $k,$_ := .NetworkSettings.Networks}}{{$k}}\n{{end}}' \
+    2>/dev/null | grep -v '^$'
 }
 
 # Pull an image from a registry, but fall back silently if the registry is
@@ -69,15 +76,15 @@ deploy_service() {
   fi
 
   pull_or_use_local "$image"
+  local network_args
+  network_args=$(get_network_args "$old")
 
-  # Discover the network from the currently-running container
-  local network
-  network=$(get_network "$old")
-  if [ -z "$network" ]; then
+  if [ -z "$network_args" ]; then
     log "  ERROR: could not determine Docker network for '$old'"
     exit 1
   fi
-  log "  Network: $network"
+
+  log "  Networks: $(get_networks_display "$old" | tr '\n' ' ')"
 
   # Capture the environment variables from the running container so the
   # canary starts with identical configuration.
@@ -89,7 +96,7 @@ deploy_service() {
   # shellcheck disable=SC2086
   docker run -d \
     --name "$canary" \
-    --network "$network" \
+    $network_args \
     $env_args \
     "$image"
 
