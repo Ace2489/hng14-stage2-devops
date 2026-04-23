@@ -261,7 +261,7 @@ jobs:
       #   - Swaps if healthy; aborts if not
       - name: Execute rolling update
         run: |
-          bash scripts/rolling-deploy.sh \
+          bash scripts/rolling_deploy.sh \
           localhost:5000
 
       - name: Verify post-deploy health
