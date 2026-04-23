@@ -10,7 +10,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -48,9 +48,9 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     networks:
       - internal
-    # restart: unless-stopped
+    restart: unless-stopped
     depends_on:
-      worker:
+      redis:
         condition: service_healthy
     deploy:
       resources:
