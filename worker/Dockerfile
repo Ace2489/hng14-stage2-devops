@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir --upgrade pip==26.0.1 \
  && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
-FROM python:3.12-alpine
+FROM python:3.12-alpine as runtime
 
 WORKDIR /app
 

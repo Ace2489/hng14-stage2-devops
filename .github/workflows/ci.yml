@@ -182,6 +182,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
       - name: Download image tarballs
         uses: actions/download-artifact@v4
         with:
@@ -196,7 +201,8 @@ jobs:
       - name: Run Integration test
         run: |
           cp .env.example .env
-          docker compose up -d --no-build
+          export $(grep -v '^#' .env | xargs)
+          go run scripts/integration.go
 
       - name: Dump logs on failure
         if: failure()
@@ -205,14 +211,6 @@ jobs:
           docker inspect hng14-stage2-devops-api-1 \
             | jq '.[0].State | {Status, ExitCode, OOMKilled, Error, Health}'
 
-      - name: Query API state
-        if: failure()
-        run: |
-          # docker exec hng14-stage2-devops-api-1 ps aux
-          # docker exec hng14-stage2-devops-api-1 lsof -i :8000
-          # docker exec hng14-stage2-devops-api-1 sh -c 'lsof -i :${API_PORT}'
-          # docker kill --signal=USR1 hng14-stage2-devops-api-1
-          # docker logs hng14-stage2-devops-api-1 --tail 100
   deploy:
     runs-on: ubuntu-latest
     needs: integration-test
