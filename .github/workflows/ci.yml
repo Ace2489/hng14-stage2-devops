@@ -187,8 +187,18 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Run Integration test
+      - name: Download image tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
 
+      - name: Load built images
+        run: |
+          docker load -i api.tar
+          docker load -i worker.tar
+          docker load -i frontend.tar
+
+      - name: Run Integration test
         run: |
           cp .env.example .env
           export $(grep -v '^#' .env | xargs)

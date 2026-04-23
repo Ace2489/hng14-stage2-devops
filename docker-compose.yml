@@ -18,6 +18,7 @@ services:
           memory: "${REDIS_MEM}"
 
   api:
+    image: "${API_IMAGE}"
     build:
       context: ./api
     environment:
@@ -38,6 +39,7 @@ services:
           memory: "${API_MEM}"
 
   worker:
+    image: "${WORKER_IMAGE}"
     build:
       context: ./worker
     environment:
@@ -57,6 +59,7 @@ services:
           memory: "${WORKER_MEM}"
 
   frontend:
+    image: "${FRONTEND_IMAGE}"
     build:
       context: ./frontend
     environment:
