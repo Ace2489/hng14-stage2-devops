@@ -13,8 +13,11 @@ WORKDIR /app
 
 COPY --from=builder /install /usr/local/
 
-RUN addgroup -S api \
-&& adduser -S -G api -H -D api
+
+
+RUN apk add --no-cache lsof=4.99.5-r0 procps-ng=4.0.5-r0 \
+    && addgroup -S api \
+    && adduser -S -G api -H -D api
 
 COPY main.py .
 

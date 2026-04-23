@@ -202,8 +202,6 @@ jobs:
         run: |
           cp .env.example .env
           docker compose up -d --no-build
-          docker compose logs --follow &
-          docker compose wait api
 
       - name: Dump logs on failure
         if: failure()
@@ -211,6 +209,13 @@ jobs:
           docker compose logs
           docker inspect hng14-stage2-devops-api-1 \
             | jq '.[0].State | {Status, ExitCode, OOMKilled, Error, Health}'
+
+      - name: Query API state
+        if: failure()
+        run: |
+          docker exec hng14-stage2-devops-api-1 ps aux
+          docker exec hng14-stage2-devops-api-1 lsof -i :8000
+          docker exec hng14-stage2-devops-api-1 sh -c 'lsof -i :${API_PORT}'
 
   deploy:
     runs-on: ubuntu-latest
