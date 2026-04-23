@@ -212,7 +212,7 @@ jobs:
             | jq '.[0].State | {Status, ExitCode, OOMKilled, Error, Health}'
 
   deploy:
-    name: Deploy (rolling update)
+    name: Deploy
     needs: [integration-test, build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
@@ -231,7 +231,9 @@ jobs:
           docker load -i frontend.tar
 
       - name: Start production stack (old version)
-        run: docker compose up -d --no-build
+        run: |
+          cp .env.example .env
+          docker compose up -d --no-build
 
       - name: Wait for production stack to be healthy (up to 120s)
         run: |
