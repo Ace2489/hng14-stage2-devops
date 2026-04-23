@@ -63,9 +63,9 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          PYTHONPATH=. pytest api/tests \
+          PYTHONPATH=. pytest tests \
             --cov=api \
-            --cov-report=html:api/htmlcov \
+            --cov-report=html:htmlcov \
             -v
 
       - name: Upload coverage report
@@ -73,7 +73,7 @@ jobs:
         if: always()
         with:
           name: coverage-report
-          path: api/htmlcov/
+          path: htmlcov/
           if-no-files-found: error
 
   build:
@@ -210,6 +210,15 @@ jobs:
           docker ps -a
           docker logs hng14-stage2-devops-api-1
           docker inspect hng14-stage2-devops-api-1 | jq '.[0].State'
+
+      - name: Debug API container
+        if: failure()
+        run: |
+          echo "=== ENV inside container ==="
+          docker exec hng14-stage2-devops-api-1 env | grep -E 'API_PORT|REDIS'
+          echo "=== Manual health probe ==="
+          docker exec hng14-stage2-devops-api-1 wget -q --spider http://localhost:8000/health && echo OK || echo FAILED
+          docker exec hng14-stage2-devops-api-1 wget -q --spider http://localhost:${API_PORT}/health && echo OK || echo FAILED
 
   deploy:
     runs-on: ubuntu-latest
