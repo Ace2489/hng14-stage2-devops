@@ -208,14 +208,71 @@ jobs:
         if: failure()
         run: |
           docker compose logs
-          docker inspect hng14-stage2-devops-api-1 \
+          docker inspect api \
             | jq '.[0].State | {Status, ExitCode, OOMKilled, Error, Health}'
 
   deploy:
+    name: Deploy (rolling update)
+    needs: [integration-test, build]
     runs-on: ubuntu-latest
-    needs: integration-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Deploy
-        run: echo "Deploying main branch build"
+      - uses: actions/checkout@v4
+
+      - name: Download built image tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images into Docker
+        run: |
+          docker load -i api.tar
+          docker load -i worker.tar
+          docker load -i frontend.tar
+
+      - name: Start production stack (old version)
+        run: docker compose up -d --no-build
+
+      - name: Wait for production stack to be healthy (up to 120s)
+        run: |
+          elapsed=0
+          until docker compose ps frontend | grep -q "healthy" || [ "$elapsed" -ge 120 ]; do
+            sleep 10
+            elapsed=$((elapsed + 10))
+            echo "Waiting... ${elapsed}s"
+          done
+          if [ "$elapsed" -ge 120 ]; then
+            echo "Production stack did not become healthy"
+            docker compose logs
+            exit 1
+          fi
+          echo "Production stack healthy (${elapsed}s)"
+      - name: Show pre-deploy container state
+        run: |
+          echo "=== Containers before rolling update ==="
+          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+
+      # Execute the rolling update. The script:
+      #   - Finds the running container by name (api / worker / frontend)
+      #   - Starts a canary from the new image alongside it
+      #   - Waits up to 60 s for the canary health check
+      #   - Swaps if healthy; aborts if not
+      - name: Execute rolling update
+        run: |
+          bash scripts/rolling-deploy.sh \
+          localhost:5000 \
+
+      - name: Verify post-deploy health
+        run: |
+          echo "=== Containers after rolling update ==="
+          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+          echo ""
+          echo "=== Health status ==="
+          for svc in redis api worker frontend; do
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$svc" 2>/dev/null \
+                    || echo "not running")
+            echo "  $svc: $status"
+          done
+      - name: Clean up runner
+        if: always()
+        run: docker compose down -v --remove-orphans

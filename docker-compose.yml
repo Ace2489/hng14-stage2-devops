@@ -19,6 +19,7 @@ services:
 
   api:
     image: "$API_IMAGE"
+    container_name: api
     build:
       context: ./api
     environment:
@@ -40,6 +41,7 @@ services:
 
   worker:
     image: "$WORKER_IMAGE"
+    container_name: worker
     build:
       context: ./worker
     environment:
@@ -60,6 +62,7 @@ services:
 
   frontend:
     image: "$FRONTEND_IMAGE"
+    image_name: frontend
     build:
       context: ./frontend
     environment:
