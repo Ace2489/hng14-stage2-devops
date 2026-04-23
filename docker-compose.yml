@@ -50,7 +50,7 @@ services:
       - internal
     # restart: unless-stopped
     depends_on:
-      redis:
+      worker:
         condition: service_healthy
     deploy:
       resources:
