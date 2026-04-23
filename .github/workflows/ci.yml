@@ -38,13 +38,12 @@ jobs:
           bunx eslint .
 
       # Docker
-      - name: Hadolint
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: |
-            api/Dockerfile_api
-            frontend/Dockerfile
-            worker/Dockerfile
+      - name: Find and lint Dockerfiles
+        run: |
+          find . -name "Dockerfile" -print0 | while IFS= read -r -d '' file; do
+          echo "Linting $file"
+          docker run --rm -i hadolint/hadolint < "$file"
+          done
   test:
     runs-on: ubuntu-latest
     needs: lint
@@ -60,17 +59,21 @@ jobs:
       - name: Install test dependencies
         run: |
           pip install -r api/requirements-test.txt
+          pip install -r api/requirements.txt
 
       - name: Run tests with coverage
         run: |
-          pytest api/tests --cov=api --cov-report=html -v
+          PYTHONPATH=. pytest tests \
+            --cov=api \
+            --cov-report=html:htmlcov \
+            -v
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: coverage-report
-          path: api/htmlcov/
+          path: htmlcov/
           if-no-files-found: error
 
   build:
@@ -100,6 +103,21 @@ jobs:
         run: |
           docker build -t localhost:5000/worker:$SHA -t localhost:5000/worker:latest ./worker
 
+      - name: Save images as tarballs
+        run: |
+          docker save localhost:5000/api:latest     -o api.tar
+          docker save localhost:5000/frontend:latest -o frontend.tar
+          docker save localhost:5000/worker:latest   -o worker.tar
+
+      - name: Upload image tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: |
+            api.tar
+            frontend.tar
+            worker.tar
+          if-no-files-found: error
       - name: Push images
         run: |
           docker push localhost:5000/api:$SHA
@@ -111,11 +129,150 @@ jobs:
           docker push localhost:5000/worker:$SHA
           docker push localhost:5000/worker:latest
 
-  deploy:
+  security-scan:
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Deploy
-        run: echo "Deploying main branch build"
+      - name: Download image tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images into Docker
+        run: |
+          docker load -i api.tar
+          docker load -i frontend.tar
+          docker load -i worker.tar
+
+      - name: Install Trivy
+        run: |
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+      - name: Scan API image
+        run: |
+          trivy image --exit-code 1 --severity CRITICAL \
+            --format sarif --output trivy-api.sarif \
+            localhost:5000/api:latest
+      - name: Scan Worker image
+        run: |
+          trivy image --exit-code 1 --severity CRITICAL \
+            --format sarif --output trivy-worker.sarif \
+            localhost:5000/worker:latest
+      - name: Scan Frontend image
+        run: |
+          trivy image --exit-code 1 --severity CRITICAL \
+            --format sarif --output trivy-frontend.sarif \
+            localhost:5000/frontend:latest
+
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-results
+          path: "*.sarif"
+          if-no-files-found: warn
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: security-scan
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Download image tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load built images
+        run: |
+          docker load -i api.tar
+          docker load -i worker.tar
+          docker load -i frontend.tar
+
+      - name: Run Integration test
+        run: |
+          cp .env.example .env
+          export $(grep -v '^#' .env | xargs)
+          go run scripts/integration.go
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose logs
+          docker inspect api \
+            | jq '.[0].State | {Status, ExitCode, OOMKilled, Error, Health}'
+
+  deploy:
+    name: Deploy (rolling update)
+    needs: [integration-test, build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download built image tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images into Docker
+        run: |
+          docker load -i api.tar
+          docker load -i worker.tar
+          docker load -i frontend.tar
+
+      - name: Start production stack (old version)
+        run: docker compose up -d --no-build
+
+      - name: Wait for production stack to be healthy (up to 120s)
+        run: |
+          elapsed=0
+          until docker compose ps frontend | grep -q "healthy" || [ "$elapsed" -ge 120 ]; do
+            sleep 10
+            elapsed=$((elapsed + 10))
+            echo "Waiting... ${elapsed}s"
+          done
+          if [ "$elapsed" -ge 120 ]; then
+            echo "Production stack did not become healthy"
+            docker compose logs
+            exit 1
+          fi
+          echo "Production stack healthy (${elapsed}s)"
+      - name: Show pre-deploy container state
+        run: |
+          echo "=== Containers before rolling update ==="
+          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+
+      # Execute the rolling update. The script:
+      #   - Finds the running container by name (api / worker / frontend)
+      #   - Starts a canary from the new image alongside it
+      #   - Waits up to 60 s for the canary health check
+      #   - Swaps if healthy; aborts if not
+      - name: Execute rolling update
+        run: |
+          bash scripts/rolling-deploy.sh \
+          localhost:5000 \
+
+      - name: Verify post-deploy health
+        run: |
+          echo "=== Containers after rolling update ==="
+          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+          echo ""
+          echo "=== Health status ==="
+          for svc in redis api worker frontend; do
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$svc" 2>/dev/null \
+                    || echo "not running")
+            echo "  $svc: $status"
+          done
+      - name: Clean up runner
+        if: always()
+        run: docker compose down -v --remove-orphans
