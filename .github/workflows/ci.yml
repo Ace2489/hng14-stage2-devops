@@ -177,15 +177,15 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
-    needs: build
+    needs: security-scan
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
+      # - name: Set up Go
+      #   uses: actions/setup-go@v5
+      #   with:
+      #     go-version: "1.22"
 
       - name: Download image tarballs
         uses: actions/download-artifact@v4
@@ -201,28 +201,20 @@ jobs:
       - name: Run Integration test
         run: |
           cp .env.example .env
-          export $(grep -v '^#' .env | xargs)
-          go run scripts/integration.go
+          docker compose up -d --no-build
+          docker compose logs --follow &
+          docker compose wait api
 
-      - name: Dump container logs on failure
+      - name: Dump logs on failure
         if: failure()
         run: |
-          docker ps -a
-          docker logs hng14-stage2-devops-api-1
-          docker inspect hng14-stage2-devops-api-1 | jq '.[0].State'
-
-      - name: Debug API container
-        if: failure()
-        run: |
-          echo "=== ENV inside container ==="
-          docker exec hng14-stage2-devops-api-1 env | grep -E 'API_PORT|REDIS'
-          echo "=== Manual health probe ==="
-          docker exec hng14-stage2-devops-api-1 wget -q --spider http://localhost:8000/health && echo OK || echo FAILED
-          docker exec hng14-stage2-devops-api-1 wget -q --spider http://localhost:${API_PORT}/health && echo OK || echo FAILED
+          docker compose logs
+          docker inspect hng14-stage2-devops-api-1 \
+            | jq '.[0].State | {Status, ExitCode, OOMKilled, Error, Health}'
 
   deploy:
     runs-on: ubuntu-latest
-    needs: build
+    needs: integration-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:

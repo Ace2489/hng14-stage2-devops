@@ -48,7 +48,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     networks:
       - internal
-    restart: unless-stopped
+    # restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
